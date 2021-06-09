@@ -4,7 +4,7 @@ NAME := magisk-installer
 SRCS := META-INF/com/google/android/update-binary
 SRCS += META-INF/com/google/android/updater-script
 
-.DEFAULT_GOAL := signed
+.DEFAULT_GOAL := zip
 
 .PHONY: zip signed push
 
