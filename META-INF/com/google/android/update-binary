@@ -1,0 +1,110 @@
+#!/sbin/sh
+
+### ADDOND START
+
+export OUTFD=$2
+
+export MAGISK_APK=
+export MAGISK_DIR=/data/adb/magisk
+export MAGISK_ADDOND=/system/addon.d/99-magisk.sh
+
+export SO8974_ZIP="$3"
+export SO8974_ADDOND=/system/addon.d/98-so8974.sh
+export SO8974_SCRIPT=${MAGISK_DIR}/so8974_magisk.sh
+export SO8974_BACKUP=${MAGISK_DIR}/so8974_boot.orig
+
+#
+#
+#
+ui_print()   { while [ "$1" ]; do echo -e "ui_print $1\nui_print" >> /proc/self/fd/$OUTFD; shift; done; }
+abort()      { ui_print "$*"; exit 1; }
+is_mounted() { if [ "$(mount | grep " $1 ")" ]; then echo 1; else echo 0; fi; }
+
+#
+#
+#
+is_mounted /data || mount /data || abort "! Failed to mount /data"
+
+### ADDOND END
+if false; then
+### ADDOND START
+[ -f "$SO8974_SCRIPT" ] || exit 0
+[ "$1" = post-restore ] || exit 0
+SO8974_ZIP=
+OUTFD=$(ps | grep -v 'grep' | grep -oE 'update(.*) 3 [0-9]+' | cut -d" " -f3)
+[ -z $OUTFD ] && OUTFD=$(ps -Af | grep -v 'grep' | grep -oE 'update(.*) 3 [0-9]+' | cut -d" " -f3)
+[ -z $OUTFD ] && OUTFD=$(ps | grep -v 'grep' | grep -oE 'status_fd=[0-9]+' | cut -d= -f2)
+[ -z $OUTFD ] && OUTFD=$(ps -Af | grep -v 'grep' | grep -oE 'status_fd=[0-9]+' | cut -d= -f2)
+### ADDOND END
+fi
+### ADDOND START
+
+ui_print "#"
+ui_print "# Magisk Installer"
+ui_print "# for Sony msm8974 devices"
+ui_print "#"
+
+### ADDOND END
+
+function extract_file_to() {
+  local archive=$1
+  local src=$2
+  local dst=$3
+  ui_print "  - $(basename $dst)"
+  unzip -p "$archive" "$src" > "$dst" \
+    || abort "! failed to extract $src from $archive"
+}
+
+ui_print "- Installing Magisk resources"
+
+for MAGISK_APK in /data/adb/magisk.apk \
+           /data/magisk/magisk.apk \
+           /data/app/com.topjohnwu.magisk*/*.apk \
+           /data/app/*/com.topjohnwu.magisk*/*.apk
+do
+  [ -f "$MAGISK_APK" ] && break || MAGISK_APK=
+done
+
+[ -z "$MAGISK_APK" ] && abort "! Magisk apk not found"
+
+if grep ' /data ' /proc/mounts | grep -vq 'tmpfs'; then
+  touch /data/.rw && rm /data/.rw || abort "! /data is not writable"
+  [ -d /data/adb ] || abort "! /data/adb does not exist"
+  touch /data/adb/.rw && rm /data/adb/.rw || abort "! /data/adb is not writable"
+  if [ ! -d "$MAGISK_DIR" ]; then
+    mkdir -p "$MAGISK_DIR" || abort "! failed to create $MAGISK_DIR"
+  fi
+fi
+
+unzip -l "$MAGISK_APK" \
+| awk '$4 ~ /^assets\/.+\.sh$/{print $4}' \
+| while read src
+do
+  dst=${MAGISK_DIR}/$(basename $src)
+  extract_file_to "$MAGISK_APK" "$src" "$dst"
+done
+
+unzip -l "$MAGISK_APK" \
+| awk '$4 ~ /^lib\/armeabi-v7a\/lib.+\.so$/{print $4}' \
+| while read src
+do
+  dst=$(basename ${src%.so})
+  dst=${MAGISK_DIR}/${dst#lib}
+  extract_file_to "$MAGISK_APK" "$src" "$dst"
+done
+
+extract_file_to "$SO8974_ZIP" \
+  META-INF/com/google/android/updater-script \
+  "$SO8974_SCRIPT"
+
+chmod -R 755 "$MAGISK_DIR"
+
+### ADDOND START
+
+magiskbbox="${MAGISK_DIR}/busybox"
+[ -x "$magiskbbox" ] || abort "! Magisk busybox not installed."
+
+export ASH_STANDALONE=1
+[ -f "$SO8974_SCRIPT" ] && exec "$magiskbbox" sh "$SO8974_SCRIPT"
+
+### ADDOND END
